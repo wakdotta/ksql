@@ -17,6 +17,8 @@ package io.confluent.ksql.rest.client;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import com.google.common.collect.ImmutableList;
+
 import io.confluent.ksql.rest.client.exception.KsqlRestClientException;
 import io.confluent.ksql.rest.client.properties.LocalProperties;
 import io.confluent.ksql.rest.entity.CommandStatus;
@@ -36,15 +38,19 @@ import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Scanner;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import javax.naming.AuthenticationException;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -72,7 +78,7 @@ public class KsqlRestClient implements Closeable {
 
   private final Client client;
 
-   private List<URI> serverAddress;
+  private List<URI> serverAddresses;
 
   private final LocalProperties localProperties;
 
@@ -93,7 +99,7 @@ public class KsqlRestClient implements Closeable {
                  final String serverAddress,
                  final Map<String, Object> localProperties) {
     this.client = Objects.requireNonNull(client, "client");
-    this.serverAddress = parseServerAddress(serverAddress);
+    this.serverAddresses = parseServerAddresses(serverAddress);
     this.localProperties = new LocalProperties(localProperties);
   }
 
@@ -106,14 +112,11 @@ public class KsqlRestClient implements Closeable {
   }
 
   public URI getServerAddress() {
-    // KSQL-1840: It should return the entry using a more dynamic/sophisticated
-    // algorithm. Implemented this way to enforce the encapsulation currently
-    // implemented, so builds up to 5.1.0-post branch don't break.
-    return serverAddress[0]; 
+    return serverAddresses.get(0);
   }
 
   public void setServerAddress(final String serverAddress) {
-    this.serverAddress = parseServerAddress(serverAddress);
+    this.serverAddresses = parseServerAddresses(serverAddress);
   }
 
   public RestResponse<ServerInfo> makeRootRequest() {
@@ -347,19 +350,23 @@ public class KsqlRestClient implements Closeable {
     return propertiesMap;
   }
 
-  private static URI[] parseServerAddress(final String serverAddress) {
+  private static List<URI> parseServerAddresses(final String serverAddresses) {
+    Objects.requireNonNull(serverAddresses, "serverAddress");
+    return ImmutableList.copyOf(
+      Arrays.stream(serverAddresses.split(","))
+         .map(String::trim)
+         .map(KsqlRestClient::parseServerAddress)
+         .collect(Collectors.toList()));
+  }
+
+  private static URI parseServerAddress(final String serverAddress) {
     Objects.requireNonNull(serverAddress, "serverAddress");
-    final String[] _serverAddresses = serverAddress.split(",");
-    final URI[] serverAddresses = new URI[_serverAddresses.length];
-    for (int i = 0; i < _serverAddresses.length; i++) {
-      try {
-        serverAddresses[i] = new URL(_serverAddresses[i]).toURI();
-      } catch (final Exception ex) {
-        throw new KsqlRestClientException(
-          "The supplied serverAddress is invalid: " + _serverAddresses[i], ex);
-      }
+    try {
+      return new URL(serverAddress).toURI();
+    } catch (final Exception e) {
+      throw new KsqlRestClientException(
+          "The supplied serverAddress is invalid: " + serverAddress, e);
     }
-    return serverAddresses;
   }
 
   private static Client buildClient() {
