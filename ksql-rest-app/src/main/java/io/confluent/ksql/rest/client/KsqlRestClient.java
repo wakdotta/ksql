@@ -72,7 +72,7 @@ public class KsqlRestClient implements Closeable {
 
   private final Client client;
 
-  private URI[] serverAddress;
+   private List<URI> serverAddress;
 
   private final LocalProperties localProperties;
 
